@@ -1,3 +1,33 @@
-Peblo AI Buddy is an intelligent web-based virtual assistant developed using React.js, TypeScript, and Vite. It provides real-time conversational assistance through a responsive and user-friendly interface, enabling users to interact efficiently and receive instant responses. The project demonstrates modern frontend development, responsive design, and web application deployment practices.
 
-Tech Stack: React.js, TypeScript, Vite, HTML5, CSS3, Git, GitHub, Vercel.
+Peblo AI Buddy is an intelligent AI-powered virtual assistant designed to deliver instant responses and interactive conversations through a modern web interface. The application focuses on providing a seamless user experience with fast performance, responsive design, and real-time communication capabilities.
+Features
+Real-time AI Chat Assistance
+Interactive User Interface
+Fast Response Generation
+Mobile & Desktop Responsive Design
+Clean and Modern UI
+Optimized Performance
+Easy-to-Use Experience
+Technologies Used
+React.js
+TypeScript
+Vite
+HTML5
+CSS3
+Git & GitHub
+Vercel
+Live Demo
+
+Application: https://peblo-ai-buddy.vercel.app
+
+Project Highlights
+Developed a modern AI assistant web application.
+Implemented reusable React components for scalability.
+Built a responsive interface for cross-device compatibility.
+Deployed the application using Vercel.
+Maintained source code and version control through GitHub.
+Future Enhancements
+Voice-based interaction
+Multi-language support
+Chat history management
+Personalized user experience
