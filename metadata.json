@@ -1,0 +1,6 @@
+{
+  "name": "Peblo AI Buddy",
+  "description": "An interactive, AI-powered storytelling and quiz companion for kids. Featuring native Text-to-Speech narration, dynamic data-driven quizzes, responsive animations, and lightweight mobile optimization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
