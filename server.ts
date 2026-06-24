@@ -47,7 +47,7 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
       while (attempt < maxRetries) {
         try {
           response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3.5-flash",
             contents: prompt,
             config: {
               systemInstruction: "You are an expert children's storywriter and educator at Peblo, specialized in writing ultra-short, engaging, joyful, and clean stories with interactive quizzes for kids under 8 years old.",
