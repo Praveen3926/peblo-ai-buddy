@@ -104,13 +104,15 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
       const storyData = JSON.parse(responseText.trim());
       res.json(storyData);
     } catch (error: any) {
+      console.error("Gemini API Error details:", error);
       console.log("Gemini Service experiencing high demand, activating premium dynamic story fallback gracefully.");
       
-      // Dynamic fallback generator to keep the children fully happy with zero crashes/hangs!
-      const cleanTheme = (theme || "").toLowerCase();
+      // Highly intelligent, keyword-matching local custom story generator
+      const cleanTheme = (theme || "").trim().toLowerCase();
+      const capitalizedTheme = theme ? theme.trim() : "magic adventures";
       let fallbackData;
 
-      if (cleanTheme.includes("rocket") || cleanTheme.includes("moon") || cleanTheme.includes("space")) {
+      if (cleanTheme.includes("rocket") || cleanTheme.includes("moon") || cleanTheme.includes("space") || cleanTheme.includes("star") || cleanTheme.includes("astronaut")) {
         fallbackData = {
           storyText: "Pip built a shiny yellow rocket and flew straight up into the starry sky. He met a friendly glowing moon bunny who helped him count the sparkling stars!",
           quiz: {
@@ -119,7 +121,7 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
             answer: "A glowing moon bunny"
           }
         };
-      } else if (cleanTheme.includes("monkey") || cleanTheme.includes("mango") || cleanTheme.includes("fruit")) {
+      } else if (cleanTheme.includes("monkey") || cleanTheme.includes("mango") || cleanTheme.includes("fruit") || cleanTheme.includes("tree")) {
         fallbackData = {
           storyText: "Pip climbed a tall mango tree in Bengaluru and met a playful little monkey named Cheeky. Cheeky shared three delicious sweet mangoes and gave Pip a high-five!",
           quiz: {
@@ -128,7 +130,7 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
             answer: "Sweet mangoes"
           }
         };
-      } else if (cleanTheme.includes("rainbow") || cleanTheme.includes("river") || cleanTheme.includes("water")) {
+      } else if (cleanTheme.includes("rainbow") || cleanTheme.includes("river") || cleanTheme.includes("water") || cleanTheme.includes("lake") || cleanTheme.includes("boat")) {
         fallbackData = {
           storyText: "Pip skipped along the shore of a magical river that shifted colors like a rainbow. A friendly golden turtle offered him a ride across the bright purple waters!",
           quiz: {
@@ -137,7 +139,7 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
             answer: "Bright purple"
           }
         };
-      } else if (cleanTheme.includes("sea") || cleanTheme.includes("ocean") || cleanTheme.includes("fish") || cleanTheme.includes("dive")) {
+      } else if (cleanTheme.includes("sea") || cleanTheme.includes("ocean") || cleanTheme.includes("fish") || cleanTheme.includes("dive") || cleanTheme.includes("beach") || cleanTheme.includes("shark")) {
         fallbackData = {
           storyText: "Pip wore a tiny waterproof helmet and dove deep into the warm Indian Ocean. There, he discovered a cheerful orange starfish holding a sparkling gold crown!",
           quiz: {
@@ -146,14 +148,67 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
             answer: "A sparkling gold crown"
           }
         };
-      } else {
-        const capitalizedTheme = theme ? theme.trim() : "discovering a magic path";
+      } else if (cleanTheme.includes("dinosaur") || cleanTheme.includes("dino") || cleanTheme.includes("dragon") || cleanTheme.includes("ancient") || cleanTheme.includes("fossil")) {
         fallbackData = {
-          storyText: `Pip set out on an exciting adventure of "${capitalizedTheme}" with a happy song. He met a cheerful forest squirrel who gave him a magical shiny key to guide his way!`,
+          storyText: `Pip travelled back in time and saw a friendly green dinosaur eating sweet leaves. The kind dinosaur waved its long tail and gave Pip a shiny golden leaf as a souvenir of "${capitalizedTheme}"!`,
           quiz: {
-            question: "What magical item did the cheerful squirrel give to Pip?",
-            options: ["A shiny gold compass", "A magical shiny key", "A warm purple woolen hat"],
-            answer: "A magical shiny key"
+            question: "What souvenir did the friendly green dinosaur give to Pip?",
+            options: ["A shiny golden leaf", "A glowing silver key", "A basket of red apples"],
+            answer: "A shiny golden leaf"
+          }
+        };
+      } else if (cleanTheme.includes("castle") || cleanTheme.includes("princess") || cleanTheme.includes("prince") || cleanTheme.includes("king") || cleanTheme.includes("queen") || cleanTheme.includes("palace")) {
+        fallbackData = {
+          storyText: `Pip visited a magical floating castle in the clouds to learn about "${capitalizedTheme}". He met a friendly little prince, and they played hide-and-seek in the grand palace garden until the stars came out!`,
+          quiz: {
+            question: "Where did Pip and the friendly prince play hide-and-seek?",
+            options: ["In the grand palace garden", "Under a deep blue ocean", "Inside a quiet rocket ship"],
+            answer: "In the grand palace garden"
+          }
+        };
+      } else if (cleanTheme.includes("car") || cleanTheme.includes("vehicle") || cleanTheme.includes("drive") || cleanTheme.includes("train") || cleanTheme.includes("truck") || cleanTheme.includes("fly")) {
+        fallbackData = {
+          storyText: `Pip hopped into a speedy blue flying car to go on a trip of "${capitalizedTheme}". He pressed a big green button and the car sprouted beautiful butterfly wings to hover gently!`,
+          quiz: {
+            question: "What happened when Pip pressed the big green button?",
+            options: ["The car sprouted butterfly wings", "The car turned into a submarine", "The car ran out of fuel"],
+            answer: "The car sprouted butterfly wings"
+          }
+        };
+      } else if (cleanTheme.includes("robot") || cleanTheme.includes("machine") || cleanTheme.includes("science") || cleanTheme.includes("sparky") || cleanTheme.includes("toy")) {
+        fallbackData = {
+          storyText: `Pip found a dusty old robot workshop and met a friendly helper drone named Sparky. Together, they built a funny dancing toaster that sings happy bedtime songs about "${capitalizedTheme}"!`,
+          quiz: {
+            question: "What funny machine did Pip and Sparky build together?",
+            options: ["A funny dancing toaster", "A speedy flying rocket", "A giant purple bicycle"],
+            answer: "A funny dancing toaster"
+          }
+        };
+      } else if (cleanTheme.includes("magic") || cleanTheme.includes("wizard") || cleanTheme.includes("spell") || cleanTheme.includes("wand") || cleanTheme.includes("fairy")) {
+        fallbackData = {
+          storyText: `Pip waved a sparkling magic wand to create "${capitalizedTheme}" bubbles in the air. Each bubble played a sweet, happy lullaby when Pip popped them with his finger!`,
+          quiz: {
+            question: "What did the rainbow bubbles do when Pip popped them?",
+            options: ["They played a sweet lullaby", "They turned into gold coins", "They splashed warm water"],
+            answer: "They played a sweet lullaby"
+          }
+        };
+      } else if (cleanTheme.includes("dog") || cleanTheme.includes("cat") || cleanTheme.includes("pet") || cleanTheme.includes("animal") || cleanTheme.includes("puppy") || cleanTheme.includes("kitten") || cleanTheme.includes("bunny")) {
+        fallbackData = {
+          storyText: `Pip met a playful golden puppy in the meadow who wanted to play "${capitalizedTheme}". The puppy chased a blue bouncy ball and returned it to Pip with a happy wag of his tail!`,
+          quiz: {
+            question: "What did the playful puppy chase in the green meadow?",
+            options: ["A blue bouncy ball", "A sweet yellow mango", "A shiny silver key"],
+            answer: "A blue bouncy ball"
+          }
+        };
+      } else {
+        fallbackData = {
+          storyText: `Pip set out on an exciting adventure of "${capitalizedTheme}" with a happy song. Along the way, he discovered a beautiful sparkling jewel that taught him a magical lesson about being kind to all friends!`,
+          quiz: {
+            question: `What magical lesson did Pip learn on his exciting "${capitalizedTheme}" adventure?`,
+            options: ["To be kind to all friends", "To run as fast as the wind", "To find the tallest banyan tree"],
+            answer: "To be kind to all friends"
           }
         };
       }
@@ -164,7 +219,11 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
 
   // Health check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "healthy", time: new Date().toISOString() });
+    res.json({ 
+      status: "healthy", 
+      time: new Date().toISOString(),
+      hasApiKey: !!process.env.GEMINI_API_KEY
+    });
   });
 
   // Vite development middleware vs Static files serving
