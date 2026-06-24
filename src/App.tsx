@@ -18,11 +18,14 @@ import {
   Smile,
   CloudLightning,
   Flame,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import DeviceOptimizer from "./components/DeviceOptimizer";
 import AchievementCollection from "./components/AchievementCollection";
 import SoundWave from "./components/SoundWave";
+import { WordGames } from "./components/WordGames";
 import { StoryData, Achievement } from "./types";
 import { playChime, playSuccess, playFailure, playSparkle } from "./utils/audio";
 import pipRobot from "./assets/images/pip_robot_buddy_1782309179646.jpg";
@@ -128,11 +131,31 @@ export default function App() {
   const [customTheme, setCustomTheme] = useState("");
   const [generationError, setGenerationError] = useState<string | null>(null);
 
+  // Zoom Level State for Reading Highlight ("medium" | "large" | "giant")
+  const [zoomLevel, setZoomLevel] = useState<"medium" | "large" | "giant">("large");
+
+  // Narration Speed State ("slow" | "normal" | "fast")
+  const [narrationSpeed, setNarrationSpeed] = useState<"slow" | "normal" | "fast">("normal");
+
+  // Toast Notifications State
+  const [toasts, setToasts] = useState<{ id: string; message: string; type: "info" | "success" | "warning" | "error" }[]>([]);
+
+  // Add toast helper
+  const addToast = (message: string, type: "info" | "success" | "warning" | "error" = "info") => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
   // Audio Progress
   const [speechProgress, setSpeechProgress] = useState(0);
 
   // Word-by-word tracking
   const [currentWordIndex, setCurrentWordIndex] = useState<number>(-1);
+  const [isFullNarrating, setIsFullNarrating] = useState(false);
+  const [elapsedSpeechMs, setElapsedSpeechMs] = useState(0);
 
   // Parse story text into words with index bounds
   const storyWords = useMemo(() => {
@@ -149,6 +172,36 @@ export default function App() {
     return words;
   }, [currentStory.storyText]);
 
+  // Compute expected duration (ms) for each word in the story
+  const wordTimings = useMemo(() => {
+    if (storyWords.length === 0) return [];
+    
+    // Average character speaking duration in milliseconds
+    let msPerChar = 52; // normal: ~140 WPM, ~5 chars per word -> ~250ms per word + pause
+    if (narrationSpeed === "slow") msPerChar = 85;
+    if (narrationSpeed === "fast") msPerChar = 38;
+    
+    let cumulativeTime = 0;
+    return storyWords.map((word) => {
+      // Base duration proportional to word length + some minimum padding for transitions
+      const wordLength = word.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").length || 1;
+      const duration = (wordLength * msPerChar) + 160; // weight by char length plus minimum base pause
+      const startMs = cumulativeTime;
+      cumulativeTime += duration;
+      return {
+        word,
+        startMs,
+        duration,
+        endMs: cumulativeTime,
+      };
+    });
+  }, [storyWords, narrationSpeed]);
+
+  const totalStoryDuration = useMemo(() => {
+    if (wordTimings.length === 0) return 0;
+    return wordTimings[wordTimings.length - 1].endMs;
+  }, [wordTimings]);
+
   // TTS References
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speechTimerRef = useRef<number | null>(null);
@@ -158,6 +211,34 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("peblo_achievements", JSON.stringify(achievements));
   }, [achievements]);
+
+  const isGeneratingRef = useRef(isGeneratingStory);
+  useEffect(() => {
+    isGeneratingRef.current = isGeneratingStory;
+  }, [isGeneratingStory]);
+
+  // Detect network connectivity changes
+  useEffect(() => {
+    const handleOnline = () => {
+      addToast("Woohoo! Connection restored. Back online!", "success");
+    };
+
+    const handleOffline = () => {
+      if (isGeneratingRef.current) {
+        addToast("Oh no! You went offline while generating a new story! Reconnect to try again.", "error");
+      } else {
+        addToast("Oops! It looks like you've gone offline.", "warning");
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Auto-play narration when story is generated or changed
   useEffect(() => {
@@ -183,31 +264,39 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentStory]);
 
-  // Handle Speech Progress / Simulation (to give visual touch on progress)
+  // Handle Speech Progress & Word Highlight Simulation (to ensure it works flawlessly in all browsers/iframes)
   useEffect(() => {
-    if (isSpeaking && !isSpeechPaused) {
-      speechTimerRef.current = window.setInterval(() => {
-        setSpeechProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(speechTimerRef.current!);
-            return 100;
-          }
-          // If we have actual word index tracking, we can estimate progress based on index, otherwise use gradual simulator
-          if (currentWordIndex >= 0 && storyWords.length > 0) {
-            return Math.min(100, Math.round(((currentWordIndex + 1) / storyWords.length) * 100));
-          }
-          return prev + 1.2; // gradual progress simulator fallback
-        });
-      }, 150);
-    } else {
-      if (speechTimerRef.current) {
-        clearInterval(speechTimerRef.current);
-      }
+    let timer: number | null = null;
+    if (isFullNarrating && isSpeaking && !isSpeechPaused) {
+      const startTime = Date.now() - elapsedSpeechMs;
+      timer = window.setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        setElapsedSpeechMs(elapsed);
+        
+        // Find current word based on elapsed time
+        const currentWordIdx = wordTimings.findIndex(
+          (t) => elapsed >= t.startMs && elapsed < t.endMs
+        );
+        
+        if (currentWordIdx !== -1) {
+          setCurrentWordIndex(currentWordIdx);
+          setSpeechProgress(Math.min(100, Math.round(((currentWordIdx + 1) / storyWords.length) * 100)));
+        } else if (elapsed >= totalStoryDuration && totalStoryDuration > 0) {
+          // Finished standard estimation, auto-complete if browser TTS was quiet/blocked
+          setSpeechProgress(100);
+          setCurrentWordIndex(-1);
+          setIsSpeaking(false);
+          setIsFullNarrating(false);
+          setQuizUnlocked(true);
+          unlockAchievement("first_listener");
+          if (timer) clearInterval(timer);
+        }
+      }, 50);
     }
     return () => {
-      if (speechTimerRef.current) clearInterval(speechTimerRef.current);
+      if (timer) clearInterval(timer);
     };
-  }, [isSpeaking, isSpeechPaused, currentWordIndex, storyWords]);
+  }, [isFullNarrating, isSpeaking, isSpeechPaused, elapsedSpeechMs, wordTimings, totalStoryDuration, storyWords.length]);
 
   // TTS Engine Functions
   const startStorySpeech = () => {
@@ -234,6 +323,8 @@ export default function App() {
       setSpeechError(null);
       setSpeechProgress(0);
       setCurrentWordIndex(-1);
+      setElapsedSpeechMs(0);
+      setIsFullNarrating(true);
 
       playChime(isMuted);
 
@@ -255,7 +346,12 @@ export default function App() {
 
       // Slightly higher pitch and cheerful speed to simulate Pip the cute robot
       utterance.pitch = isMuted ? 0 : 1.35;
-      utterance.rate = 1.02;
+      
+      let rateFactor = 1.02;
+      if (narrationSpeed === "slow") rateFactor = 0.72;
+      else if (narrationSpeed === "fast") rateFactor = 1.32;
+      
+      utterance.rate = rateFactor;
       utterance.volume = isMuted ? 0 : 1.0;
 
       // TTS event callbacks
@@ -264,9 +360,11 @@ export default function App() {
         setIsSpeaking(true);
         setIsSpeechPaused(false);
         setCurrentWordIndex(0);
+        setElapsedSpeechMs(0);
+        setIsFullNarrating(true);
       };
 
-      // Real-time boundary event to highlight current word
+      // Real-time boundary event to highlight current word (keeps as fallback if it fires)
       utterance.onboundary = (event) => {
         if (event.name === "word") {
           const charIndex = event.charIndex;
@@ -296,6 +394,8 @@ export default function App() {
       utterance.onend = () => {
         setIsSpeaking(false);
         setIsSpeechPaused(false);
+        setIsFullNarrating(false);
+        setElapsedSpeechMs(0);
         setSpeechProgress(100);
         setCurrentWordIndex(-1);
         setQuizUnlocked(true);
@@ -306,6 +406,8 @@ export default function App() {
         console.error("Speech Synthesis Error:", e);
         setIsLoadingSpeech(false);
         setIsSpeaking(false);
+        setIsFullNarrating(false);
+        setElapsedSpeechMs(0);
         setCurrentWordIndex(-1);
         // Fallback for iframe restrictions or muted tabs: immediately unlock the quiz so the child isn't stuck
         setSpeechProgress(100);
@@ -318,6 +420,8 @@ export default function App() {
       console.error(err);
       setIsLoadingSpeech(false);
       setIsSpeaking(false);
+      setIsFullNarrating(false);
+      setElapsedSpeechMs(0);
       setCurrentWordIndex(-1);
       setQuizUnlocked(true);
       setSpeechError("Oh! Pip's speakers are resting, but you can read the story below! 📖");
@@ -331,6 +435,8 @@ export default function App() {
     setIsSpeaking(false);
     setIsSpeechPaused(false);
     setIsLoadingSpeech(false);
+    setIsFullNarrating(false);
+    setElapsedSpeechMs(0);
     setSpeechProgress(0);
     setCurrentWordIndex(-1);
   };
@@ -455,7 +561,15 @@ export default function App() {
   };
 
   // Generate New Custom Story with Gemini API
+  const [isOnlineSimulated, setIsOnlineSimulated] = useState(true); // Added for simulation support if needed
+
   const generateNewStory = async (themeName: string) => {
+    if (!navigator.onLine) {
+      addToast("Oh no! You are offline. Pip cannot fetch a new story right now.", "error");
+      setGenerationError("Offline mode: Please check your internet connection and try again.");
+      return;
+    }
+
     setIsGeneratingStory(true);
     setGenerationError(null);
     stopStorySpeech();
@@ -533,6 +647,45 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-200 via-amber-100 to-emerald-100 py-6 px-4 flex flex-col items-center justify-start select-none font-sans overflow-x-hidden">
+      {/* Toast Notifications */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-full max-w-xs sm:max-w-sm px-4 pointer-events-none">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+              className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-2xl shadow-xl border-3 text-xs font-bold leading-tight select-none relative ${
+                toast.type === "success"
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-950 shadow-emerald-200/50"
+                  : toast.type === "error"
+                  ? "bg-rose-50 border-rose-300 text-rose-950 shadow-rose-200/50"
+                  : toast.type === "warning"
+                  ? "bg-amber-50 border-amber-300 text-amber-950 shadow-amber-200/50"
+                  : "bg-sky-50 border-sky-300 text-sky-950 shadow-sky-200/50"
+              }`}
+            >
+              <span className="text-lg flex-shrink-0 leading-none mt-0.5">
+                {toast.type === "success" && "🎉"}
+                {toast.type === "error" && "🚨"}
+                {toast.type === "warning" && "⚠️"}
+                {toast.type === "info" && "✨"}
+              </span>
+              <div className="flex-1 pr-4">
+                {toast.message}
+              </div>
+              <button
+                onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                className="absolute right-3 top-3 hover:scale-110 active:scale-95 text-slate-400 hover:text-slate-600 transition-transform cursor-pointer"
+              >
+                ✕
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       {/* Decorative Cloud elements */}
       <div className="absolute top-10 left-10 w-24 h-8 bg-white/60 rounded-full blur-sm pointer-events-none animate-pulse" />
       <div className="absolute top-24 right-12 w-32 h-10 bg-white/50 rounded-full blur-sm pointer-events-none" />
@@ -648,7 +801,24 @@ export default function App() {
         </section>
 
         {/* Story Text Card */}
-        <section className="bg-amber-50/95 border-3 border-amber-200 rounded-3xl p-5 shadow-inner relative">
+        <section className="bg-amber-50/95 border-3 border-amber-200 rounded-3xl p-5 pt-9 shadow-inner relative">
+          {/* Interactive Floating Word Pop-up Bubble */}
+          <AnimatePresence>
+            {isSpeaking && currentWordIndex >= 0 && storyWords[currentWordIndex] && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.8, y: -10 }}
+                className="absolute top-2 left-1/2 -translate-x-1/2 bg-amber-400 border-2 border-amber-500 text-amber-950 px-3 py-1 rounded-xl shadow-md flex items-center gap-1.5 z-40 font-black text-xs select-none whitespace-nowrap"
+              >
+                <span>💬 Pip reads:</span>
+                <span className="bg-white text-orange-600 px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider inline-block shadow-sm">
+                  {storyWords[currentWordIndex]?.text?.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()""“’”]/g, "") || ""}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <span className="absolute -top-3 left-4 bg-amber-400 text-amber-950 text-[10px] font-black uppercase px-2 py-0.5 rounded-md tracking-wider">
             Today's Story Snippet
           </span>
@@ -664,32 +834,55 @@ export default function App() {
               <span className="text-amber-400 font-extrabold font-serif text-xl">“</span>
               {storyWords.map((word, index) => {
                 const isCurrent = isSpeaking && index === currentWordIndex;
+                const zoomFactor = zoomLevel === "medium" ? 1.28 : zoomLevel === "large" ? 1.55 : 1.85;
+                const translateYFactor = zoomLevel === "medium" ? -4 : zoomLevel === "large" ? -7 : -11;
+
                 return (
                   <motion.span
                     key={index}
                     animate={{
-                      scale: isCurrent ? 1.15 : 1,
+                      scale: isCurrent ? zoomFactor : 1,
+                      y: isCurrent ? translateYFactor : 0,
                       color: isCurrent ? "#ea580c" : "#451a03", // orange-600 or amber-950
-                      backgroundColor: isCurrent ? "#fef3c7" : "transparent", // amber-100
+                      backgroundColor: isCurrent ? "#ffedd5" : "transparent", // warm orange-100/amber-100 or transparent
+                    }}
+                    style={{
+                      zIndex: isCurrent ? 30 : 1,
                     }}
                     transition={{ type: "spring", stiffness: 350, damping: 18 }}
-                    className={`inline-block px-1 py-0.5 rounded-lg transition-all ${
+                    className={`inline-block px-1 py-0.5 rounded-lg select-none ${
                       isCurrent 
-                        ? "font-black shadow-md border-2 border-amber-300 -translate-y-1 scale-110 z-10" 
-                        : "font-bold hover:text-amber-700 cursor-pointer"
+                        ? "font-black shadow-md border-2 border-amber-300" 
+                        : "font-bold hover:text-amber-700 hover:scale-105 transition-transform duration-200 cursor-pointer"
                     }`}
                     onClick={() => {
-                      if (!isSpeaking) {
-                        try {
-                          const u = new SpeechSynthesisUtterance(word.text);
-                          u.pitch = 1.35;
-                          u.rate = 1.0;
-                          u.volume = isMuted ? 0 : 1.0;
-                          window.speechSynthesis.cancel();
-                          window.speechSynthesis.speak(u);
-                        } catch (e) {
-                          console.error(e);
-                        }
+                      try {
+                        setCurrentWordIndex(index);
+                        setIsSpeaking(true);
+                        
+                        const u = new SpeechSynthesisUtterance(word.text);
+                        u.pitch = 1.35;
+                        let wordRateFactor = 1.0;
+                        if (narrationSpeed === "slow") wordRateFactor = 0.7;
+                        else if (narrationSpeed === "fast") wordRateFactor = 1.3;
+                        u.rate = wordRateFactor;
+                        u.volume = isMuted ? 0 : 1.0;
+                        
+                        u.onend = () => {
+                          setIsSpeaking(false);
+                          setCurrentWordIndex(-1);
+                        };
+                        u.onerror = () => {
+                          setIsSpeaking(false);
+                          setCurrentWordIndex(-1);
+                        };
+                        
+                        window.speechSynthesis.cancel();
+                        window.speechSynthesis.speak(u);
+                      } catch (e) {
+                        console.error(e);
+                        setIsSpeaking(false);
+                        setCurrentWordIndex(-1);
                       }
                     }}
                   >
@@ -707,6 +900,71 @@ export default function App() {
               className="bg-amber-400 h-full rounded-full transition-all duration-300"
               style={{ width: `${speechProgress}%` }}
             />
+          </div>
+
+          {/* Word Zoom Magnifier Controls */}
+          <div className="mt-4 pt-3 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-amber-900/80 flex items-center gap-1">
+              <span>🔍 Kids Word Zoom:</span>
+            </span>
+            <div className="flex bg-amber-100/50 rounded-xl p-1 gap-1 border border-amber-200">
+              {(["medium", "large", "giant"] as const).map((level) => {
+                const label = level === "medium" ? "Standard" : level === "large" ? "Big Pop 🚀" : "Super Zoom 🔍";
+                const isActive = zoomLevel === level;
+                return (
+                  <button
+                    key={level}
+                    onClick={() => {
+                      setZoomLevel(level);
+                      playSparkle(isMuted); // Play a lovely sound cue!
+                    }}
+                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all ${
+                      isActive
+                        ? "bg-amber-400 text-amber-950 shadow-sm"
+                        : "text-amber-800/80 hover:bg-amber-200/40"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Narration Speed Controls */}
+          <div className="mt-3 pt-3 border-t border-amber-200/60 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-extrabold text-amber-900/80 flex items-center gap-1">
+              <span>🐢 Narration Speed:</span>
+            </span>
+            <div className="flex bg-amber-100/50 rounded-xl p-1 gap-1 border border-amber-200">
+              {(["slow", "normal", "fast"] as const).map((speed) => {
+                const label = speed === "slow" ? "Slow 🐢" : speed === "normal" ? "Normal 🚶" : "Fast ⚡";
+                const isActive = narrationSpeed === speed;
+                return (
+                  <button
+                    key={speed}
+                    onClick={() => {
+                      setNarrationSpeed(speed);
+                      playSparkle(isMuted); // Play a lovely sound cue!
+                      
+                      // If currently speaking, restart narration at the new speed
+                      if (isSpeaking && !isSpeechPaused) {
+                        setTimeout(() => {
+                          startStorySpeech();
+                        }, 100);
+                      }
+                    }}
+                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all ${
+                      isActive
+                        ? "bg-amber-400 text-amber-950 shadow-sm"
+                        : "text-amber-800/80 hover:bg-amber-200/40"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Read Me a Story Primary Button */}
@@ -934,6 +1192,15 @@ export default function App() {
           </AnimatePresence>
         </section>
 
+        {/* Dynamic & Fun Word Games Arcade Section */}
+        <section className="relative">
+          <WordGames 
+            storyText={currentStory.storyText} 
+            isMuted={isMuted} 
+            onUnlockAchievement={unlockAchievement} 
+          />
+        </section>
+
         {/* Gamified AI Custom Story Generator */}
         <section className="bg-gradient-to-r from-emerald-50 to-sky-50 border-3 border-emerald-200 rounded-3xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -952,6 +1219,44 @@ export default function App() {
                 Reset Original
               </button>
             )}
+          </div>
+
+          {/* Network Status & Simulator Control */}
+          <div className="mb-4 flex items-center justify-between bg-white/80 backdrop-blur-sm border-2 border-emerald-100/60 rounded-2xl px-3 py-2 text-[11px] font-bold shadow-sm">
+            <div className="flex items-center gap-1.5 text-emerald-950">
+              {navigator.onLine ? (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <Wifi size={14} className="text-emerald-500" />
+                  <span>Online & Connected</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                  <WifiOff size={14} className="text-rose-500" />
+                  <span className="text-rose-600">Offline Mode</span>
+                </>
+              )}
+            </div>
+            
+            <button
+              onClick={() => {
+                const isCurrentlyOnline = navigator.onLine;
+                const eventName = isCurrentlyOnline ? "offline" : "online";
+                const nextState = !isCurrentlyOnline;
+                
+                Object.defineProperty(navigator, 'onLine', {
+                  value: nextState,
+                  configurable: true
+                });
+                
+                window.dispatchEvent(new Event(eventName));
+                setIsOnlineSimulated(nextState);
+              }}
+              className="px-2.5 py-1 text-[10px] font-extrabold bg-emerald-100/60 hover:bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200/50 active:scale-95 transition-all shadow-sm flex items-center gap-1"
+            >
+              <span>{navigator.onLine ? "🔌 Go Offline" : "⚡ Go Online"}</span>
+            </button>
           </div>
 
           <p className="text-xs text-amber-900/80 leading-relaxed mb-4">
