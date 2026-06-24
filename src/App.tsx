@@ -25,6 +25,7 @@ import AchievementCollection from "./components/AchievementCollection";
 import SoundWave from "./components/SoundWave";
 import { StoryData, Achievement } from "./types";
 import { playChime, playSuccess, playFailure, playSparkle } from "./utils/audio";
+import pipRobot from "./assets/images/pip_robot_buddy_1782309179646.jpg";
 
 // Default Story and Quiz defined in the prompt guidelines
 const DEFAULT_STORY_DATA: StoryData = {
@@ -625,7 +626,7 @@ export default function App() {
               className="relative w-36 h-36 rounded-full border-4 border-amber-400 overflow-hidden bg-sky-50 shadow-md flex items-center justify-center z-10"
             >
               <img
-                src="/src/assets/images/pip_robot_buddy_1782309179646.jpg"
+                src={pipRobot}
                 alt="Pip the Robot"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
