@@ -606,8 +606,72 @@ export default function App() {
       // Award achievement for custom AI exploration
       unlockAchievement("explorer");
     } catch (err: any) {
-      console.error(err);
-      setGenerationError(err.message || "Pip lost signal in the woods! Try clicking again.");
+      console.error("Primary server story generation failed, loading Pip's offline Storybook:", err);
+      
+      const cleanTheme = (themeName || "").toLowerCase();
+      let fallbackData: StoryData;
+
+      if (cleanTheme.includes("rocket") || cleanTheme.includes("moon") || cleanTheme.includes("space") || cleanTheme.includes("star") || cleanTheme.includes("astronaut")) {
+        fallbackData = {
+          storyText: "Pip built a shiny yellow rocket and flew straight up into the starry sky. He met a friendly glowing moon bunny who helped him count the sparkling stars!",
+          quiz: {
+            question: "Who did Pip meet on the moon?",
+            options: ["A glowing moon bunny", "An angry green alien", "A sleepy polar bear"],
+            answer: "A glowing moon bunny"
+          }
+        };
+      } else if (cleanTheme.includes("monkey") || cleanTheme.includes("mango") || cleanTheme.includes("fruit") || cleanTheme.includes("tree")) {
+        fallbackData = {
+          storyText: "Pip climbed a tall mango tree in Bengaluru and met a playful little monkey named Cheeky. Cheeky shared three delicious sweet mangoes and gave Pip a high-five!",
+          quiz: {
+            question: "What did Cheeky the monkey share with Pip?",
+            options: ["Shiny red apples", "Sweet mangoes", "Crunchy purple grapes"],
+            answer: "Sweet mangoes"
+          }
+        };
+      } else if (cleanTheme.includes("rainbow") || cleanTheme.includes("river") || cleanTheme.includes("water") || cleanTheme.includes("lake") || cleanTheme.includes("boat")) {
+        fallbackData = {
+          storyText: "Pip skipped along the shore of a magical river that shifted colors like a rainbow. A friendly golden turtle offered him a ride across the bright purple waters!",
+          quiz: {
+            question: "What color was the magical river water when Pip crossed?",
+            options: ["Midnight black", "Bright purple", "Sparkling silver"],
+            answer: "Bright purple"
+          }
+        };
+      } else if (cleanTheme.includes("sea") || cleanTheme.includes("ocean") || cleanTheme.includes("fish") || cleanTheme.includes("dive") || cleanTheme.includes("beach") || cleanTheme.includes("starfish")) {
+        fallbackData = {
+          storyText: "Pip wore a tiny waterproof helmet and dove deep into the warm Indian Ocean. There, he discovered a cheerful orange starfish holding a sparkling gold crown!",
+          quiz: {
+            question: "What was the cheerful starfish holding deep in the ocean?",
+            options: ["A big green seashell", "A sparkling gold crown", "A lost blue gear"],
+            answer: "A sparkling gold crown"
+          }
+        };
+      } else {
+        const capitalizedTheme = themeName ? themeName.trim() : "magic adventures";
+        fallbackData = {
+          storyText: `Pip set out on an exciting adventure of "${capitalizedTheme}" with a happy song. Along the way, he discovered a beautiful sparkling jewel that taught him a magical lesson about being kind to all friends!`,
+          quiz: {
+            question: `What magical lesson did Pip learn on his exciting "${capitalizedTheme}" adventure?`,
+            options: ["To be kind to all friends", "To run as fast as the wind", "To find the tallest banyan tree"],
+            answer: "To be kind to all friends"
+          }
+        };
+      }
+
+      // Load fallback story & quiz dynamically so child is never stuck!
+      setCurrentStory(fallbackData);
+      setQuizUnlocked(false);
+      setSelectedOption(null);
+      setQuizState("unanswered");
+      setSpeechProgress(0);
+      setCurrentWordIndex(-1);
+      setSpeechError(null);
+      setHintUsed(false);
+      setDimmedOptions([]);
+
+      addToast("Pip activated his Storybook Mode! 📖✨", "success");
+      unlockAchievement("explorer");
     } finally {
       setIsGeneratingStory(false);
     }

@@ -32,12 +32,14 @@ async function startServer() {
 
   // API Route: Generate a brand new story and quiz using Gemini
   app.post("/api/story/generate", async (req, res) => {
-    const { theme } = req.body;
+    const theme = req.body && req.body.theme;
+    const themeStr = typeof theme === "string" ? theme : "";
+    
     try {
       const ai = getGeminiClient();
 
       const prompt = `Generate a delightful, brand-new 2-sentence story snippet for a young child in India featuring Pip the clever little robot. 
-Theme or activity: ${theme || "discovering a magical forest helper"}.
+Theme or activity: ${themeStr || "discovering a magical forest helper"}.
 Then, generate a simple 1-question interactive comprehension quiz based directly on that story, with 3 to 5 options. Ensure the correct answer matches exactly one of the options.`;
 
       let response;
@@ -101,15 +103,32 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
         throw new Error("Empty response from Gemini.");
       }
 
-      const storyData = JSON.parse(responseText.trim());
+      // Robust JSON Extraction & Parsing
+      let cleanText = responseText.trim();
+      if (cleanText.includes("```")) {
+        const jsonMatch = cleanText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+          cleanText = jsonMatch[1].trim();
+        } else {
+          cleanText = cleanText.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/, "").trim();
+        }
+      }
+
+      const storyData = JSON.parse(cleanText);
+      
+      // Secondary validation to ensure key properties exist
+      if (!storyData || !storyData.storyText || !storyData.quiz || !storyData.quiz.question || !Array.isArray(storyData.quiz.options)) {
+        throw new Error("Invalid schema structure returned from Gemini response.");
+      }
+
       res.json(storyData);
     } catch (error: any) {
       console.error("Gemini API Error details:", error);
       console.log("Gemini Service experiencing high demand, activating premium dynamic story fallback gracefully.");
       
       // Highly intelligent, keyword-matching local custom story generator
-      const cleanTheme = (theme || "").trim().toLowerCase();
-      const capitalizedTheme = theme ? theme.trim() : "magic adventures";
+      const cleanTheme = themeStr.trim().toLowerCase();
+      const capitalizedTheme = themeStr ? themeStr.trim() : "magic adventures";
       let fallbackData;
 
       if (cleanTheme.includes("rocket") || cleanTheme.includes("moon") || cleanTheme.includes("space") || cleanTheme.includes("star") || cleanTheme.includes("astronaut")) {
