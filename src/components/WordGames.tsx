@@ -51,6 +51,7 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
   const [userSpelling, setUserSpelling] = useState<string[]>([]);
   const [gameStatus, setGameStatus] = useState<"playing" | "success" | "wrong">("playing");
   const [showHint, setShowHint] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
   
   // Balloon pop game variables
   const [balloonLetters, setBalloonLetters] = useState<{ id: number; char: string; color: string; popped: boolean }[]>([]);
@@ -211,7 +212,7 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
 
   // Handle letter click in SCRAMBLE mode
   const handleLetterClick = (letterObj: { id: number; char: string; used: boolean }) => {
-    if (gameStatus !== "playing") return;
+    if (gameStatus !== "playing" || isCompleting) return;
     if (letterObj.used) return;
 
     speakLetter(letterObj.char);
@@ -264,7 +265,7 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
 
   // Handle Balloon click in BALLOON POP mode
   const handleBalloonClick = (balloon: { id: number; char: string; popped: boolean; color: string }) => {
-    if (gameStatus !== "playing") return;
+    if (gameStatus !== "playing" || isCompleting) return;
     if (balloon.popped) return;
 
     // Pop the balloon!
@@ -309,9 +310,7 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
 
   // Success Handler
   const handleSuccess = () => {
-    setGameStatus("success");
-    setScore((prev) => prev + 10);
-    setStreakCount((prev) => prev + 1);
+    setIsCompleting(true);
     playSuccess(isMuted);
 
     // Confetti pop!
@@ -325,6 +324,14 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
     if (streakCount + 1 >= 3 && onUnlockAchievement) {
       onUnlockAchievement("starlight_genius");
     }
+
+    // Delay the success screen layout change so last letter/balloon zoom animation finishes beautifully
+    setTimeout(() => {
+      setGameStatus("success");
+      setScore((prev) => prev + 10);
+      setStreakCount((prev) => prev + 1);
+      setIsCompleting(false);
+    }, 600);
   };
 
   // Failure Handler
@@ -445,12 +452,18 @@ export function WordGames({ storyText, isMuted, onUnlockAchievement }: WordGames
                 key={index}
                 animate={
                   gameStatus === "success"
-                    ? { scale: [1, 1.15, 1], rotate: [0, 5, -5, 0] }
+                    ? { scale: [1, 1.18, 1], rotate: [0, 5, -5, 0] }
                     : gameStatus === "wrong"
                     ? { x: [-4, 4, -4, 4, 0] }
+                    : isFilled && index === userSpelling.length - 1
+                    ? { scale: [1, 1.3, 1] }
                     : {}
                 }
-                transition={{ delay: index * 0.05, duration: 0.35 }}
+                transition={
+                  gameStatus === "success" || gameStatus === "wrong"
+                    ? { delay: index * 0.05, duration: 0.35 }
+                    : { type: "spring", stiffness: 500, damping: 15 }
+                }
                 className={`w-10 h-11 rounded-xl border-2 flex items-center justify-center font-black text-lg shadow-sm uppercase ${
                   gameStatus === "success"
                     ? "bg-emerald-400 border-emerald-500 text-white"

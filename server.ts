@@ -123,7 +123,14 @@ Then, generate a simple 1-question interactive comprehension quiz based directly
 
       res.json(storyData);
     } catch (error: any) {
-      console.error("Gemini API Error details:", error);
+      const isQuotaExceeded = error?.status === "RESOURCE_EXHAUSTED" || 
+                              (error?.message && (error.message.includes("quota") || error.message.includes("429") || error.message.includes("RESOURCE_EXHAUSTED")));
+      
+      if (isQuotaExceeded) {
+        console.log("Gemini API Info: Quota limit reached (429/RESOURCE_EXHAUSTED). Activating local dynamic story fallback gracefully.");
+      } else {
+        console.log("Gemini API Info: Service notice (activating fallback):", error?.message || error);
+      }
       console.log("Gemini Service experiencing high demand, activating premium dynamic story fallback gracefully.");
       
       // Highly intelligent, keyword-matching local custom story generator

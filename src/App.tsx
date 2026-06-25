@@ -155,7 +155,7 @@ export default function App() {
   // Word-by-word tracking
   const [currentWordIndex, setCurrentWordIndex] = useState<number>(-1);
   const [isFullNarrating, setIsFullNarrating] = useState(false);
-  const [elapsedSpeechMs, setElapsedSpeechMs] = useState(0);
+  const elapsedSpeechMsRef = useRef<number>(0);
 
   // Parse story text into words with index bounds
   const storyWords = useMemo(() => {
@@ -176,16 +176,22 @@ export default function App() {
   const wordTimings = useMemo(() => {
     if (storyWords.length === 0) return [];
     
-    // Average character speaking duration in milliseconds
-    let msPerChar = 52; // normal: ~140 WPM, ~5 chars per word -> ~250ms per word + pause
-    if (narrationSpeed === "slow") msPerChar = 85;
-    if (narrationSpeed === "fast") msPerChar = 38;
+    // Calibrated to align with SpeechSynthesis rates (slow: ~0.72x, normal: ~1.02x, fast: ~1.32x)
+    let msPerChar = 50; 
+    let basePause = 140; 
+    if (narrationSpeed === "slow") {
+      msPerChar = 75;
+      basePause = 210;
+    } else if (narrationSpeed === "fast") {
+      msPerChar = 35;
+      basePause = 100;
+    }
     
     let cumulativeTime = 0;
     return storyWords.map((word) => {
       // Base duration proportional to word length + some minimum padding for transitions
       const wordLength = word.text.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").length || 1;
-      const duration = (wordLength * msPerChar) + 160; // weight by char length plus minimum base pause
+      const duration = (wordLength * msPerChar) + basePause;
       const startMs = cumulativeTime;
       cumulativeTime += duration;
       return {
@@ -206,6 +212,16 @@ export default function App() {
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const speechTimerRef = useRef<number | null>(null);
   const isFirstRender = useRef(true);
+  const hasFiredBoundaryRef = useRef(false);
+  const speechStartTimeRef = useRef<number>(0);
+  const wordZoomTimeoutRef = useRef<any>(null);
+
+  const clearWordZoomTimeout = () => {
+    if (wordZoomTimeoutRef.current) {
+      clearTimeout(wordZoomTimeoutRef.current);
+      wordZoomTimeoutRef.current = null;
+    }
+  };
 
   // Sync Achievements to LocalStorage
   useEffect(() => {
@@ -237,6 +253,7 @@ export default function App() {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      clearWordZoomTimeout();
     };
   }, []);
 
@@ -255,6 +272,7 @@ export default function App() {
     setIsSpeechPaused(false);
     setIsLoadingSpeech(false);
     setSpeechProgress(0);
+    clearWordZoomTimeout();
     setCurrentWordIndex(-1);
 
     const timer = setTimeout(() => {
@@ -268,10 +286,11 @@ export default function App() {
   useEffect(() => {
     let timer: number | null = null;
     if (isFullNarrating && isSpeaking && !isSpeechPaused) {
-      const startTime = Date.now() - elapsedSpeechMs;
+      speechStartTimeRef.current = Date.now() - elapsedSpeechMsRef.current;
+      
       timer = window.setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        setElapsedSpeechMs(elapsed);
+        const elapsed = Date.now() - speechStartTimeRef.current;
+        elapsedSpeechMsRef.current = elapsed;
         
         // Find current word based on elapsed time
         const currentWordIdx = wordTimings.findIndex(
@@ -279,24 +298,34 @@ export default function App() {
         );
         
         if (currentWordIdx !== -1) {
-          setCurrentWordIndex(currentWordIdx);
-          setSpeechProgress(Math.min(100, Math.round(((currentWordIdx + 1) / storyWords.length) * 100)));
+          // Only trigger state updates if values have actually changed to prevent high frequency re-renders
+          setCurrentWordIndex((prev) => (prev !== currentWordIdx ? currentWordIdx : prev));
+          setSpeechProgress((prev) => {
+            const nextProgress = Math.min(100, Math.round(((currentWordIdx + 1) / storyWords.length) * 100));
+            return prev !== nextProgress ? nextProgress : prev;
+          });
         } else if (elapsed >= totalStoryDuration && totalStoryDuration > 0) {
           // Finished standard estimation, auto-complete if browser TTS was quiet/blocked
           setSpeechProgress(100);
-          setCurrentWordIndex(-1);
+          clearWordZoomTimeout();
+          if (storyWords.length > 0) {
+            setCurrentWordIndex(storyWords.length - 1);
+          }
+          wordZoomTimeoutRef.current = setTimeout(() => {
+            setCurrentWordIndex(-1);
+          }, 1000);
           setIsSpeaking(false);
           setIsFullNarrating(false);
           setQuizUnlocked(true);
           unlockAchievement("first_listener");
           if (timer) clearInterval(timer);
         }
-      }, 50);
+      }, 30); // 30ms interval for extremely snappy, real-time responses
     }
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isFullNarrating, isSpeaking, isSpeechPaused, elapsedSpeechMs, wordTimings, totalStoryDuration, storyWords.length]);
+  }, [isFullNarrating, isSpeaking, isSpeechPaused, wordTimings, totalStoryDuration, storyWords.length]);
 
   // TTS Engine Functions
   const startStorySpeech = () => {
@@ -322,9 +351,11 @@ export default function App() {
       setIsLoadingSpeech(true);
       setSpeechError(null);
       setSpeechProgress(0);
+      clearWordZoomTimeout();
       setCurrentWordIndex(-1);
-      setElapsedSpeechMs(0);
+      elapsedSpeechMsRef.current = 0;
       setIsFullNarrating(true);
+      hasFiredBoundaryRef.current = false;
 
       playChime(isMuted);
 
@@ -360,33 +391,36 @@ export default function App() {
         setIsSpeaking(true);
         setIsSpeechPaused(false);
         setCurrentWordIndex(0);
-        setElapsedSpeechMs(0);
+        elapsedSpeechMsRef.current = 0;
         setIsFullNarrating(true);
       };
 
-      // Real-time boundary event to highlight current word (keeps as fallback if it fires)
+      // Real-time boundary event to keep simulation perfectly calibrated with physical speaker voice
       utterance.onboundary = (event) => {
         if (event.name === "word") {
           const charIndex = event.charIndex;
           const matchIndex = storyWords.findIndex(
             (w) => charIndex >= w.start && charIndex < w.end
           );
-          if (matchIndex !== -1) {
-            setCurrentWordIndex(matchIndex);
-            setSpeechProgress(Math.min(100, Math.round(((matchIndex + 1) / storyWords.length) * 100)));
-          } else {
-            let closestIdx = -1;
+          
+          let targetIndex = matchIndex;
+          if (targetIndex === -1) {
             for (let i = 0; i < storyWords.length; i++) {
               if (storyWords[i].start <= charIndex) {
-                closestIdx = i;
+                targetIndex = i;
               } else {
                 break;
               }
             }
-            if (closestIdx !== -1) {
-              setCurrentWordIndex(closestIdx);
-              setSpeechProgress(Math.min(100, Math.round(((closestIdx + 1) / storyWords.length) * 100)));
-            }
+          }
+          
+          if (targetIndex !== -1 && wordTimings[targetIndex]) {
+            // Recalibrate the simulation clock dynamically!
+            const wordStartMs = wordTimings[targetIndex].startMs;
+            speechStartTimeRef.current = Date.now() - wordStartMs;
+            
+            setCurrentWordIndex(targetIndex);
+            setSpeechProgress(Math.min(100, Math.round(((targetIndex + 1) / storyWords.length) * 100)));
           }
         }
       };
@@ -395,9 +429,15 @@ export default function App() {
         setIsSpeaking(false);
         setIsSpeechPaused(false);
         setIsFullNarrating(false);
-        setElapsedSpeechMs(0);
+        elapsedSpeechMsRef.current = 0;
         setSpeechProgress(100);
-        setCurrentWordIndex(-1);
+        clearWordZoomTimeout();
+        if (storyWords.length > 0) {
+          setCurrentWordIndex(storyWords.length - 1);
+        }
+        wordZoomTimeoutRef.current = setTimeout(() => {
+          setCurrentWordIndex(-1);
+        }, 1000);
         setQuizUnlocked(true);
         unlockAchievement("first_listener");
       };
@@ -407,8 +447,14 @@ export default function App() {
         setIsLoadingSpeech(false);
         setIsSpeaking(false);
         setIsFullNarrating(false);
-        setElapsedSpeechMs(0);
-        setCurrentWordIndex(-1);
+        elapsedSpeechMsRef.current = 0;
+        clearWordZoomTimeout();
+        if (storyWords.length > 0) {
+          setCurrentWordIndex(storyWords.length - 1);
+        }
+        wordZoomTimeoutRef.current = setTimeout(() => {
+          setCurrentWordIndex(-1);
+        }, 1000);
         // Fallback for iframe restrictions or muted tabs: immediately unlock the quiz so the child isn't stuck
         setSpeechProgress(100);
         setQuizUnlocked(true);
@@ -421,7 +467,8 @@ export default function App() {
       setIsLoadingSpeech(false);
       setIsSpeaking(false);
       setIsFullNarrating(false);
-      setElapsedSpeechMs(0);
+      elapsedSpeechMsRef.current = 0;
+      clearWordZoomTimeout();
       setCurrentWordIndex(-1);
       setQuizUnlocked(true);
       setSpeechError("Oh! Pip's speakers are resting, but you can read the story below! 📖");
@@ -436,8 +483,9 @@ export default function App() {
     setIsSpeechPaused(false);
     setIsLoadingSpeech(false);
     setIsFullNarrating(false);
-    setElapsedSpeechMs(0);
+    elapsedSpeechMsRef.current = 0;
     setSpeechProgress(0);
+    clearWordZoomTimeout();
     setCurrentWordIndex(-1);
   };
 
@@ -606,7 +654,7 @@ export default function App() {
       // Award achievement for custom AI exploration
       unlockAchievement("explorer");
     } catch (err: any) {
-      console.error("Primary server story generation failed, loading Pip's offline Storybook:", err);
+      console.log("Primary server story generation notice (loading offline fallback storybook):", err?.message || err);
       
       const cleanTheme = (themeName || "").toLowerCase();
       let fallbackData: StoryData;
@@ -893,13 +941,13 @@ export default function App() {
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -5 }}
-              className="text-base md:text-lg text-amber-950 leading-relaxed text-center mt-2 flex flex-wrap gap-x-1.5 justify-center items-center"
+              className="text-base md:text-lg text-amber-950 leading-loose text-center mt-2 flex flex-wrap gap-x-2 gap-y-5 md:gap-y-6 justify-center items-center"
             >
               <span className="text-amber-400 font-extrabold font-serif text-xl">“</span>
               {storyWords.map((word, index) => {
-                const isCurrent = isSpeaking && index === currentWordIndex;
-                const zoomFactor = zoomLevel === "medium" ? 1.28 : zoomLevel === "large" ? 1.55 : 1.85;
-                const translateYFactor = zoomLevel === "medium" ? -4 : zoomLevel === "large" ? -7 : -11;
+                const isCurrent = index === currentWordIndex;
+                const zoomFactor = zoomLevel === "medium" ? 1.45 : zoomLevel === "large" ? 1.95 : 2.55;
+                const translateYFactor = zoomLevel === "medium" ? -6 : zoomLevel === "large" ? -14 : -24;
 
                 return (
                   <motion.span
@@ -913,14 +961,15 @@ export default function App() {
                     style={{
                       zIndex: isCurrent ? 30 : 1,
                     }}
-                    transition={{ type: "spring", stiffness: 350, damping: 18 }}
-                    className={`inline-block px-1 py-0.5 rounded-lg select-none ${
+                    transition={{ type: "spring", stiffness: 500, damping: 22 }}
+                    className={`inline-block px-1.5 py-0.5 rounded-lg select-none cursor-pointer origin-center ${
                       isCurrent 
-                        ? "font-black shadow-md border-2 border-amber-300" 
-                        : "font-bold hover:text-amber-700 hover:scale-105 transition-transform duration-200 cursor-pointer"
+                        ? "font-black shadow-md border-2 border-amber-300 animate-pulse" 
+                        : "font-bold text-amber-950 hover:text-amber-700 hover:scale-105 active:scale-95"
                     }`}
                     onClick={() => {
                       try {
+                        clearWordZoomTimeout();
                         setCurrentWordIndex(index);
                         setIsSpeaking(true);
                         
@@ -934,11 +983,17 @@ export default function App() {
                         
                         u.onend = () => {
                           setIsSpeaking(false);
-                          setCurrentWordIndex(-1);
+                          clearWordZoomTimeout();
+                          wordZoomTimeoutRef.current = setTimeout(() => {
+                            setCurrentWordIndex(-1);
+                          }, 1000);
                         };
                         u.onerror = () => {
                           setIsSpeaking(false);
-                          setCurrentWordIndex(-1);
+                          clearWordZoomTimeout();
+                          wordZoomTimeoutRef.current = setTimeout(() => {
+                            setCurrentWordIndex(-1);
+                          }, 1000);
                         };
                         
                         window.speechSynthesis.cancel();
